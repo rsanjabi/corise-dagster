@@ -35,7 +35,7 @@ def process_data(stocks):
     ins={"aggregations": In(dagster_type=Aggregation)},
     required_resource_keys={"redis"},
     tags={"kind":"redis"},
-    description="Placeholder for loading data",
+    description="Loads aggregations into redis cache",
 )
 def put_redis_data(context, aggregations):
     context.resources.redis.put_data(aggregations.date.strftime("%m/%d/%Y"), str(aggregations.high))
