@@ -38,7 +38,7 @@ def process_data(stocks):
     description="Placeholder for loading data",
 )
 def put_redis_data(context, aggregations):
-    context.resources.redis.put_data(aggregations.date, str(aggregations.high))
+    context.resources.redis.put_data(aggregations.date.strftime("%m/%d/%Y"), str(aggregations.high))
 
 
 @graph
