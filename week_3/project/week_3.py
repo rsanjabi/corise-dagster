@@ -2,7 +2,6 @@ from typing import List
 
 from dagster import (
     In,
-    Nothing,
     Out,
     ResourceDefinition,
     RetryPolicy,
@@ -22,6 +21,7 @@ from project.types import Aggregation, Stock
 @op(
     out={"stocks": Out(dagster_type=List[Stock])},
     required_resource_keys={"s3"},
+    config_schema={"s3_key": str},
     tags={"kind": "s3"},
     description="Get a list of stocks from an S3 file",
 )
@@ -37,7 +37,6 @@ def get_s3_data(context):
 @op(
     ins={"stocks": In(dagster_type=List[Stock])},
     out={"aggregation": Out(dagster_type=Aggregation)},
-    tags={"kind": "transformation"},
     description="Find the largest stock value",
 )
 def process_data(stocks):
@@ -87,28 +86,27 @@ docker = {
     "ops": {"get_s3_data": {"config": {"s3_key": "prefix/stock_9.csv"}}},
 }
 
-@static_partitioned_config(partition_keys=['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
+@static_partitioned_config(partition_keys=list((map(str, range(1,11)))))
 def docker_config(partition_key: str):
     return {
-                "resources": {
-                    "s3": {
-                        "config": {
-                            "bucket": "dagster",
-                            "access_key": "test",
-                            "secret_key": "test",
-                            "endpoint_url": "http://localstack:4566",
-                        }
-                    },
-                },
-                "ops": {
-                    "get_s3_data": {
-                        "config": {
-                            "table_name": partition_key, 
-                            "process_date": "2020-07-01"
-                        }
-                    }
-                },
+        "resources": {
+            "s3": {
+                "config": {
+                    "bucket": "dagster",
+                    "access_key": "test",
+                    "secret_key": "test",
+                    "endpoint_url": "http://localstack:4566",
+                }
+            },
+        },
+        "redis": {
+            "config": {
+                "host": "redis",
+                "port": 6379,
             }
+        },
+        "ops": {"get_s3_data": {"config": {"s3_key": f"prefix/stock_{partition_key}.csv"}}},
+    }
 
 
 local_week_3_pipeline = week_3_pipeline.to_job(
@@ -143,7 +141,7 @@ def docker_week_3_sensor(context):
         endpoint_url="http://localstack:4566"
     )
     if not new_keys:
-        yield SkipReason("No new files found in bucket.")
+        yield SkipReason("No new s3 files found in bucket.")
         return
     for key in new_keys:
         yield RunRequest(
