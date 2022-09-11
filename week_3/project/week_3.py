@@ -19,28 +19,47 @@ from project.sensors import get_s3_keys
 from project.types import Aggregation, Stock
 
 
-@op
-def get_s3_data():
-    # Use your ops from week 2
-    pass
+@op(
+    out={"stocks": Out(dagster_type=List[Stock])},
+    required_resource_keys={"s3"},
+    tags={"kind": "s3"},
+    description="Get a list of stocks from an S3 file",
+)
+def get_s3_data(context):
+    stocks = list()
+    key = context.op_config["s3_key"]
+    for row in context.resources.s3.get_data(key):
+        stock = Stock.from_list(row)
+        stocks.append(stock)
+    return stocks
 
 
-@op
-def process_data():
-    # Use your ops from week 2
-    pass
+@op(
+    ins={"stocks": In(dagster_type=List[Stock])},
+    out={"aggregation": Out(dagster_type=Aggregation)},
+    tags={"kind": "transformation"},
+    description="Find the largest stock value",
+)
+def process_data(stocks):
+    big_stock = max(stocks, key=lambda x:x.high)
+    return Aggregation(date=big_stock.date, high=big_stock.high)
 
 
-@op
-def put_redis_data():
-    # Use your ops from week 2
-    pass
+@op(
+    ins={"aggregations": In(dagster_type=Aggregation)},
+    required_resource_keys={"redis"},
+    tags={"kind":"redis"},
+    description="Loads aggregations into redis cache",
+)
+def put_redis_data(context, aggregations):
+    context.resources.redis.put_data(aggregations.date.strftime("%m/%d/%Y"), str(aggregations.high))
 
 
 @graph
 def week_3_pipeline():
-    # Use your graph from week 2
-    pass
+    s3_data = get_s3_data()
+    transformed_data = process_data(s3_data)
+    put_redis_data(transformed_data)
 
 
 local = {
@@ -68,9 +87,28 @@ docker = {
     "ops": {"get_s3_data": {"config": {"s3_key": "prefix/stock_9.csv"}}},
 }
 
-
-def docker_config():
-    pass
+@static_partitioned_config(partition_keys=['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
+def docker_config(partition_key: str):
+    return {
+                "resources": {
+                    "s3": {
+                        "config": {
+                            "bucket": "dagster",
+                            "access_key": "test",
+                            "secret_key": "test",
+                            "endpoint_url": "http://localstack:4566",
+                        }
+                    },
+                },
+                "ops": {
+                    "get_s3_data": {
+                        "config": {
+                            "table_name": partition_key, 
+                            "process_date": "2020-07-01"
+                        }
+                    }
+                },
+            }
 
 
 local_week_3_pipeline = week_3_pipeline.to_job(
@@ -87,16 +125,48 @@ docker_week_3_pipeline = week_3_pipeline.to_job(
     config=docker_config,
     resource_defs={
         "s3": s3_resource,
-        "redis": redis_resource,
-    },
+        "redis": redis_resource
+        },
+    op_retry_policy=RetryPolicy(max_retries=10, delay=1),
 )
 
 
-local_week_3_schedule = None  # Add your schedule
+local_week_3_schedule = ScheduleDefinition(job=local_week_3_pipeline, cron_schedule="*/15 * * * *")
+docker_week_3_schedule = ScheduleDefinition(job=docker_week_3_pipeline, cron_schedule="0 * * * *")
 
-docker_week_3_schedule = None  # Add your schedule
 
-
-@sensor
-def docker_week_3_sensor():
-    pass
+@sensor(job=docker_week_3_pipeline)
+def docker_week_3_sensor(context):
+    new_keys = get_s3_keys(
+        bucket="dagster",
+        prefix="prefix",
+        endpoint_url="http://localstack:4566"
+    )
+    if not new_keys:
+        yield SkipReason("No new files found in bucket.")
+        return
+    for key in new_keys:
+        yield RunRequest(
+            run_key=key,
+            run_config={
+                "resources": {
+                    "s3": {
+                        "config": {
+                            "bucket": "dagster",
+                            "access_key": "test",
+                            "secret_key": "test",
+                            "endpoint_url": "http://localstack:4566",
+                        }
+                    },
+                    "redis": {
+                        "config": {
+                            "host": "redis",
+                            "port": 6379,
+                        }
+                    },
+                },
+                "ops": {
+                    "get_s3_data": {"config": {"s3_key": key}},
+                },
+            }
+        )
