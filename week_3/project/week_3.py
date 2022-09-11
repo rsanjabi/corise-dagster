@@ -98,12 +98,12 @@ def docker_config(partition_key: str):
                     "endpoint_url": "http://localstack:4566",
                 }
             },
-        },
-        "redis": {
-            "config": {
-                "host": "redis",
-                "port": 6379,
-            }
+            "redis": {
+                "config": {
+                    "host": "redis",
+                    "port": 6379,
+                }
+            },
         },
         "ops": {"get_s3_data": {"config": {"s3_key": f"prefix/stock_{partition_key}.csv"}}},
     }
