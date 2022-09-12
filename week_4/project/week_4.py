@@ -49,7 +49,7 @@ get_s3_data_docker, process_data_docker, put_redis_data_docker = with_resources(
                     "bucket": "dagster",
                     "access_key": "test",
                     "secret_key": "test",
-                    "endpoint_url": "http://localhost:4566",
+                    "endpoint_url": "http://localstack:4566",
                 }
             },
             "redis": {
