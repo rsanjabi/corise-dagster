@@ -26,6 +26,8 @@ def get_s3_data(context):
     group_name="corise",
 )
 def process_data(get_s3_data):
+    if len(get_s3_data) == 0:
+        return None
     big_stock = max(get_s3_data, key=lambda x:x.high)
     return Aggregation(date=big_stock.date, high=big_stock.high)
 
